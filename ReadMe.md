@@ -1,0 +1,1 @@
+make a uploads dir in the root folder where the images will be stored.
