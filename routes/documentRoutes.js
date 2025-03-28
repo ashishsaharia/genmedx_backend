@@ -28,7 +28,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         console.log("Cloudinary Response:", result);
 
         const document = new Document({
-            user: req.body.userId || "6623c1a48b8b2f001c8e9f33", // Dummy user ID for now
+            user: req.body.userId || "65f123456789abcd01234567", // Dummy user ID for now
             title: req.file.originalname,
             documentType: req.file.mimetype.split('/')[1],
             cloudinaryUrl: result.secure_url,
