@@ -1,13 +1,36 @@
 {
-  "dependencies": {
-    "body-parser": "^1.20.3",
-    "cors": "^2.8.5",
-    "express": "^4.21.2",
-    "fs": "^0.0.1-security",
-    "groq-sdk": "^0.17.0",
-    "multer": "^1.4.5-lts.2",
-    "openai": "^4.89.0",
-    "tesseract.js": "^6.0.0"
+  "name": "genmedx_backend",
+  "version": "1.0.0",
+  "description": "make a uploads dir in the root folder where the images will be stored.",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
-  "type": "commonjs"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ashishsaharia/genmedx_backend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/ashishsaharia/genmedx_backend/issues"
+  },
+  "homepage": "https://github.com/ashishsaharia/genmedx_backend#readme",
+  "dependencies": {
+    "cloudinary": "^1.41.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mongodb": "^6.15.0",
+    "mongoose": "^8.13.0",
+    "multer": "^1.4.5-lts.2",
+    "multer-storage-cloudinary": "^4.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
 }
