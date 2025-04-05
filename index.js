@@ -1,16 +1,30 @@
+const Groq = require("groq-sdk").default; 
 const express = require("express");
 const fs = require("fs");
-const Groq = require("groq-sdk").default;
+const cors = require("cors");
 const tesseract = require("tesseract.js");
+const path = require("path");
 
-const router = express.Router();
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// Chatbot Function
+const app = express();
+const groq = new Groq({ apiKey: "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" });
+
+// Enable CORS for all origins and methods
+app.use(cors());
+
+// Use built-in JSON parser instead of body-parser
+app.use(express.json({ limit: "100mb" })); // Ensure large payloads are supported
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 async function getGroqChatCompletion(message) {
   try {
     return await groq.chat.completions.create({
-      messages: [{ role: "user", content: message }],
+      messages: [
+        {
+          role: "user",
+          content: message,
+        },
+      ],
       model: "llama-3.3-70b-versatile",
     });
   } catch (error) {
@@ -19,15 +33,15 @@ async function getGroqChatCompletion(message) {
   }
 }
 
-// Chatbot Route
-router.post("/chat", async (req, res) => {
+app.post("/chat", async (req, res) => {
   try {
-    const userMessage = req.body.message;
+    const userMessage = req.body.message; 
+    // console.log(userMessage);
     if (!userMessage) return res.status(400).json({ error: "Message is required" });
 
     const chatCompletion = await getGroqChatCompletion(userMessage);
     const response = chatCompletion.choices[0]?.message?.content || "No response";
-    
+    console.log(response);
     res.json({ response });
   } catch (error) {
     console.error("Error fetching response:", error);
@@ -35,28 +49,79 @@ router.post("/chat", async (req, res) => {
   }
 });
 
-// OCR Route
-router.post("/upload", async (req, res) => {
-  const { image } = req.body;
+
+
+app.post("/upload", async (req, res) => {
+  const { image, userEmail } = req.body;
+
   if (!image) return res.status(400).json({ error: "No image provided" });
+  if (!userEmail) return res.status(400).json({ error: "No user email provided" });
 
-  const imageBuffer = Buffer.from(image, "base64");
-  const filePath = `uploads/image_${Date.now()}.png`;
+  try {
+    // Create folder path: uploads/user@example.com/
+    const userFolder = path.join(__dirname, "uploads", userEmail);
 
-  fs.writeFile(filePath, imageBuffer, async (err) => {
+    // Create the folder if it doesn't exist
+    if (!fs.existsSync(userFolder)) {
+      fs.mkdirSync(userFolder, { recursive: true });
+    }
+
+    // Generate unique file path inside user folder
+    const filePath = path.join(userFolder, `image_${Date.now()}.png`);
+
+    // Convert base64 to buffer
+    const imageBuffer = Buffer.from(image, "base64");
+
+    // Save image to file
+    fs.writeFile(filePath, imageBuffer, async (err) => {
+      if (err) {
+        console.error("Error saving image:", err);
+        return res.status(500).json({ error: "Failed to save image" });
+      }
+
+      try {
+        const { data: { text } } = await tesseract.recognize(filePath, "eng");
+        res.json({
+          message: "Image uploaded successfully",
+          path: filePath,
+          extractedText: text,
+        });
+      } catch (error) {
+        console.error("Error extracting text:", error);
+        res.status(500).json({ error: "Failed to extract text from the image." });
+      }
+    });
+  } catch (error) {
+    console.error("Server error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+app.get("/uploads/:email", (req, res) => {
+  const email = req.params.email;
+  // const safeEmail = email.replace(/[^a-zA-Z0-9]/g, "_"); // sanitize
+  console.log(email)
+  const userFolder = path.join(__dirname, "uploads", email);
+
+  if (!fs.existsSync(userFolder)) {
+    return res.json([]);
+  }
+
+  fs.readdir(userFolder, (err, files) => {
     if (err) {
-      console.error("Error saving image:", err);
-      return res.status(500).json({ error: "Failed to save image" });
+      return res.status(500).json({ error: "Error reading user folder" });
     }
 
-    try {
-      const { data: { text } } = await tesseract.recognize(filePath, "eng");
-      res.json({ message: "Image uploaded successfully", path: filePath, extractedText: text });
-    } catch (error) {
-      console.error("Error extracting text:", error);
-      res.status(500).json({ error: "Failed to extract text from the image." });
-    }
+    const fileUrls = files.map((file) => {
+      return `http://localhost:3000/uploads/${email}/${file}`;
+    });
+
+    res.json(fileUrls);
   });
 });
 
-module.exports = router;
+
+
+
+app.listen(3000, () => console.log("Server running on port 3000"));
