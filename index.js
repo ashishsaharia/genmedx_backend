@@ -4,9 +4,11 @@ const fs = require("fs");
 const cors = require("cors");
 const tesseract = require("tesseract.js");
 const path = require("path");
+const Redis = require("ioredis");
 
 
 const app = express();
+const redis = new Redis(6380);
 const groq = new Groq({ apiKey: "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" });
 
 // Enable CORS for all origins and methods
@@ -16,15 +18,10 @@ app.use(cors());
 app.use(express.json({ limit: "100mb" })); // Ensure large payloads are supported
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-async function getGroqChatCompletion(message) {
+async function getGroqChatCompletion(messages) {
   try {
     return await groq.chat.completions.create({
-      messages: [
-        {
-          role: "user",
-          content: message,
-        },
-      ],
+      messages,
       model: "llama-3.3-70b-versatile",
     });
   } catch (error) {
@@ -33,16 +30,36 @@ async function getGroqChatCompletion(message) {
   }
 }
 
+
+
 app.post("/chat", async (req, res) => {
   try {
-    const userMessage = req.body.message; 
-    // console.log(userMessage);
-    if (!userMessage) return res.status(400).json({ error: "Message is required" });
+    const { message, userEmail } = req.body;
+    if (!message || !userEmail) return res.status(400).json({ error: "Message and userEmail are required" });
 
-    const chatCompletion = await getGroqChatCompletion(userMessage);
-    const response = chatCompletion.choices[0]?.message?.content || "No response";
-    console.log(response);
-    res.json({ response });
+    const redisKey = `chat:${userEmail}`;
+    let chatHistory = await redis.get(redisKey);
+
+    let messages = [];
+    if (chatHistory) {
+      messages = JSON.parse(chatHistory);
+    } else {
+      messages.push({
+        role: "system",
+        content: "You are an AI assistant helping the user based on previous context.",
+      });
+    }
+
+    messages.push({ role: "user", content: message });
+
+    const chatCompletion = await getGroqChatCompletion(messages);
+    const aiResponse = chatCompletion.choices[0]?.message?.content || "No response";
+
+    messages.push({ role: "assistant", content: aiResponse });
+
+    await redis.setex(redisKey, 3600, JSON.stringify(messages));
+
+    res.json({ response: aiResponse });
   } catch (error) {
     console.error("Error fetching response:", error);
     res.status(500).json({ error: "Failed to fetch chat response" });
@@ -50,6 +67,14 @@ app.post("/chat", async (req, res) => {
 });
 
 
+
+app.post("/logout", async (req, res) => {
+  const { userEmail } = req.body;
+  if (!userEmail) return res.status(400).json({ error: "userEmail required" });
+
+  await redis.del(`chat:${userEmail}`);
+  res.json({ message: "Chat memory cleared." });
+});
 
 app.post("/upload", async (req, res) => {
   const { image, userEmail } = req.body;
@@ -101,7 +126,7 @@ app.post("/upload", async (req, res) => {
 app.get("/uploads/:email", (req, res) => {
   const email = req.params.email;
   // const safeEmail = email.replace(/[^a-zA-Z0-9]/g, "_"); // sanitize
-  console.log(email)
+  // console.log(email)
   const userFolder = path.join(__dirname, "uploads", email);
 
   if (!fs.existsSync(userFolder)) {
