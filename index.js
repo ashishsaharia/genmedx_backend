@@ -1,23 +1,25 @@
-const Groq = require("groq-sdk").default; 
+const Groq = require("groq-sdk").default;
 const express = require("express");
 const fs = require("fs");
 const cors = require("cors");
 const tesseract = require("tesseract.js");
+const OcrText = require("./models/OcrText");
 const path = require("path");
-const Redis = require("ioredis");
+const connectDB = require("./config/db");
+const dotenv = require("dotenv");
 
+dotenv.config();
+connectDB();
 
 const app = express();
-const redis = new Redis(6380);
-const groq = new Groq({ apiKey: "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" });
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// Enable CORS for all origins and methods
+// Middleware
 app.use(cors());
+app.use(express.json({ limit: "100mb" }));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// Use built-in JSON parser instead of body-parser
-app.use(express.json({ limit: "100mb" })); // Ensure large payloads are supported
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
+// Helper for Groq call
 async function getGroqChatCompletion(messages) {
   try {
     return await groq.chat.completions.create({
@@ -25,128 +27,103 @@ async function getGroqChatCompletion(messages) {
       model: "llama-3.3-70b-versatile",
     });
   } catch (error) {
-    console.error("Error making API call:", error);
+    console.error("Groq API error:", error);
     return null;
   }
 }
 
-
-
+// Chat endpoint
 app.post("/chat", async (req, res) => {
-  try {
-    const { message, userEmail } = req.body;
-    if (!message || !userEmail) return res.status(400).json({ error: "Message and userEmail are required" });
+  const { message, userEmail } = req.body;
+  if (!message || !userEmail) return res.status(400).json({ error: "Missing message or email" });
 
-    const redisKey = `chat:${userEmail}`;
-    let chatHistory = await redis.get(redisKey);
+  const chatHistory = [
+    { role: "system", content: "You are a helpful medical assistant." },
+    { role: "user", content: message },
+  ];
 
-    let messages = [];
-    if (chatHistory) {
-      messages = JSON.parse(chatHistory);
-    } else {
-      messages.push({
-        role: "system",
-        content: "You are an AI assistant helping the user based on previous context.",
-      });
-    }
+  const chatCompletion = await getGroqChatCompletion(chatHistory);
+  const aiResponse = chatCompletion?.choices?.[0]?.message?.content || "No response";
 
-    messages.push({ role: "user", content: message });
-
-    const chatCompletion = await getGroqChatCompletion(messages);
-    const aiResponse = chatCompletion.choices[0]?.message?.content || "No response";
-
-    messages.push({ role: "assistant", content: aiResponse });
-
-    await redis.setex(redisKey, 3600, JSON.stringify(messages));
-
-    res.json({ response: aiResponse });
-  } catch (error) {
-    console.error("Error fetching response:", error);
-    res.status(500).json({ error: "Failed to fetch chat response" });
-  }
+  res.json({ response: aiResponse });
 });
 
-
-
-app.post("/logout", async (req, res) => {
-  const { userEmail } = req.body;
-  if (!userEmail) return res.status(400).json({ error: "userEmail required" });
-
-  await redis.del(`chat:${userEmail}`);
-  res.json({ message: "Chat memory cleared." });
-});
-
+// Upload + OCR
 app.post("/upload", async (req, res) => {
   const { image, userEmail } = req.body;
 
-  if (!image) return res.status(400).json({ error: "No image provided" });
-  if (!userEmail) return res.status(400).json({ error: "No user email provided" });
+  if (!image || !userEmail) return res.status(400).json({ error: "Missing image or email" });
 
   try {
-    // Create folder path: uploads/user@example.com/
     const userFolder = path.join(__dirname, "uploads", userEmail);
+    if (!fs.existsSync(userFolder)) fs.mkdirSync(userFolder, { recursive: true });
 
-    // Create the folder if it doesn't exist
-    if (!fs.existsSync(userFolder)) {
-      fs.mkdirSync(userFolder, { recursive: true });
-    }
-
-    // Generate unique file path inside user folder
     const filePath = path.join(userFolder, `image_${Date.now()}.png`);
-
-    // Convert base64 to buffer
     const imageBuffer = Buffer.from(image, "base64");
 
-    // Save image to file
     fs.writeFile(filePath, imageBuffer, async (err) => {
-      if (err) {
-        console.error("Error saving image:", err);
-        return res.status(500).json({ error: "Failed to save image" });
-      }
+      if (err) return res.status(500).json({ error: "Error saving image" });
 
       try {
+        // OCR Processing
         const { data: { text } } = await tesseract.recognize(filePath, "eng");
-        res.json({
-          message: "Image uploaded successfully",
-          path: filePath,
-          extractedText: text,
-        });
+
+        // Save OCR text to the database
+        const fileName = path.basename(filePath);
+        const entry = new OcrText({ userEmail, fileName, text });
+        await entry.save();
+
+        // Respond with the extracted OCR text and file path
+        res.json({ message: "Upload and OCR success", path: filePath, extractedText: text });
       } catch (error) {
-        console.error("Error extracting text:", error);
-        res.status(500).json({ error: "Failed to extract text from the image." });
+        console.error("OCR error:", error);
+        res.status(500).json({ error: "OCR processing failed" });
       }
     });
   } catch (error) {
-    console.error("Server error:", error);
-    res.status(500).json({ error: "Server error" });
+    console.error("Upload error:", error);
+    res.status(500).json({ error: "Upload failed" });
   }
 });
 
-
+// List files
 app.get("/uploads/:email", (req, res) => {
   const email = req.params.email;
-  // const safeEmail = email.replace(/[^a-zA-Z0-9]/g, "_"); // sanitize
-  // console.log(email)
   const userFolder = path.join(__dirname, "uploads", email);
 
-  if (!fs.existsSync(userFolder)) {
-    return res.json([]);
-  }
+  if (!fs.existsSync(userFolder)) return res.json([]);
 
   fs.readdir(userFolder, (err, files) => {
-    if (err) {
-      return res.status(500).json({ error: "Error reading user folder" });
-    }
+    if (err) return res.status(500).json({ error: "Unable to read folder" });
 
-    const fileUrls = files.map((file) => {
-      return `http://localhost:3000/uploads/${email}/${file}`;
-    });
-
+    const fileUrls = files.map(file => `http://localhost:3000/uploads/${email}/${file}`);
     res.json(fileUrls);
   });
 });
 
+// Fetch OCR entries for a user
+app.get("/get-ocr/:email", async (req, res) => {
+  try {
+    const entries = await OcrText.find({ userEmail: req.params.email });
+
+    let combinedText = "";
+    entries.forEach(entry => {
+      combinedText += `new document\n${entry.text}\n`;
+    });
+
+    res.status(200).json({
+      email: req.params.email,
+      ocrTexts: combinedText.trim()
+    });
+  } catch (error) {
+    console.error("DB fetch error:", error);
+    res.status(500).json({ error: "DB fetch failed" });
+  }
+});
 
 
 
-app.listen(3000, () => console.log("Server running on port 3000"));
+
+
+// Start the server
+app.listen(3000, () => console.log("Backend running on port 3000"));
