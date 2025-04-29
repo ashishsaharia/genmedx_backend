@@ -2,9 +2,12 @@
   "dependencies": {
     "body-parser": "^1.20.3",
     "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
     "express": "^4.21.2",
     "fs": "^0.0.1-security",
     "groq-sdk": "^0.17.0",
+    "ioredis": "^5.6.0",
+    "mongoose": "^8.14.0",
     "multer": "^1.4.5-lts.2",
     "openai": "^4.89.0",
     "tesseract.js": "^6.0.0"
