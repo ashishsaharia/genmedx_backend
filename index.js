@@ -83,13 +83,13 @@ app.post("/chat", async (req, res) => {
 
     let messages = [];
 
-    if (chatHistory) {
+    if (!chatHistory) {
       // First-time chat: fetch OCR text and inject into memory
       const ocrResponse = await fetch(`http://localhost:3000/get-ocr/${userEmail}`);
       const ocrData = await ocrResponse.json();
       const ocrText = ocrData.ocrTexts || "No OCR data available.";
 
-      console.log(ocrText);
+      // console.log(ocrText);
       
 
       messages.push({

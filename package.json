@@ -12,5 +12,11 @@
     "openai": "^4.89.0",
     "tesseract.js": "^6.0.0"
   },
-  "type": "commonjs"
+  "scripts": {
+    "start": "concurrently \"redis-server --port 6380\" \"node index.js\""
+  },
+  "type": "commonjs",
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
 }
