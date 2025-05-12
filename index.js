@@ -4,11 +4,13 @@ const fs = require("fs");
 const cors = require("cors");
 const tesseract = require("tesseract.js");
 const OcrText = require("./models/OcrText");
+const MedicalInfo = require("./models/medicalInfo");
 const path = require("path");
 const connectDB = require("./config/db");
 const dotenv = require("dotenv");
 const { log } = require("console");
 const Redis = require("ioredis");
+
 
 dotenv.config();
 connectDB();
@@ -242,7 +244,7 @@ app.get("/get-ocr/:email", async (req, res) => {
     let combinedText = "";
     entries.forEach(entry => {
       const timestamp = entry.createdAt.toLocaleString(); // Get the creation time from the DB
-      combinedText += `new document\nTime of this text is: ${timestamp}\n${entry.text}\n`;
+      combinedText += `this is the new document ocr(remember it)\nand the Time when this text was updtaed is : ${timestamp}\n${entry.text}\n`;
     });
 
     res.status(200).json({
@@ -255,9 +257,148 @@ app.get("/get-ocr/:email", async (req, res) => {
   }
 });
 
+// this is the onboarding route 
+const User = require("./models/User"); // adjust path as needed
+
+app.post("/onboarding", async (req, res) => {
+  const {
+    userEmail,
+    fullName,
+    phoneNumber,
+    userAge,
+    userGender,
+    userHeight,
+    userWeight,
+    userMedicalCondition,
+    userAlergies,
+    userEmergencyContact
+  } = req.body;
+
+  if (
+    !userEmail || !fullName || !phoneNumber || !userAge || !userGender ||
+    !userHeight || !userWeight || !userEmergencyContact
+  ) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  try {
+    let user = await User.findOne({ userEmail });
+
+    if (user) {
+      // Optional: update existing user
+      await User.updateOne({ userEmail }, {
+        fullName,
+        phoneNumber,
+        userAge,
+        userGender,
+        userHeight,
+        userWeight,
+        userMedicalCondition,
+        userAlergies,
+        userEmergencyContact
+      });
+    } else {
+      // Create new user
+      user = new User({
+        userEmail,
+        fullName,
+        phoneNumber,
+        userAge,
+        userGender,
+        userHeight,
+        userWeight,
+        userMedicalCondition,
+        userAlergies,
+        userEmergencyContact
+      });
+
+      await user.save();
+    }
+
+    res.status(200).json({ message: "User onboarding saved successfully" });
+  } catch (err) {
+    console.error("Onboarding save error:", err);
+    res.status(500).json({ error: "Server error while saving onboarding data" });
+  }
+});
+
+
+
+
+app.post("/add-medicine", async (req, res) => {
+  const { userEmail, name, cause } = req.body;
+
+  if (!userEmail || !name || !cause) {
+    return res.status(400).json({ error: "userEmail, name, and cause are required" });
+  }
+
+  try {
+    // Fetch or create the MedicalInfo document
+    let medicalInfo = await MedicalInfo.findOne({ userEmail });
+    if (!medicalInfo) {
+      medicalInfo = new MedicalInfo({ userEmail, medicines: [] });
+    }
+
+    // Construct the new medicine object
+    const newMedicine = { name, cause };
+
+    // Add the new medicine to the medicines array
+    medicalInfo.medicines.push(newMedicine);
+    await medicalInfo.save();
+const timestamp = medicalInfo.createdAt.toLocaleString();
+    // Construct the new medicine text to be appended to OCR text
+    const newMedicineText = `Medicine name is this(this medicne was added manually not the pdf or any ocr remember it) : ${name}\nand its Cause is this : ${cause}\nand this medicine was updated on the date${timestamp}\n`;
+
+    // Update the OCR Text document
+    const ocrTextDoc = await OcrText.findOne({ userEmail });
+    console.log("newMedicineText", newMedicineText);
+    if (ocrTextDoc) {
+      // Append to the existing OCR text
+      ocrTextDoc.text += newMedicineText;
+      await ocrTextDoc.save();
+    } else {
+      // Create a new OCR text document if not found
+      await OcrText.create({
+        userEmail,
+        fileName: "medicine_info.txt",
+        text: newMedicineText,
+      });
+    }
+
+    res.status(200).json({ message: "Medicine info added and OCR text updated", medicalInfo });
+
+  } catch (err) {
+    console.error("Error adding medicine info:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// to check the user is present in the db
+app.get('/check-user/:email', async (req, res) => {
+  const email = req.params.email;
+
+  try {
+    const user = await User.findOne({ userEmail: email });
+
+    if (user) {
+      // User exists
+      return res.json({ exists: true });
+    } else {
+      // User does not exist
+      return res.json({ exists: false });
+    }
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 
 
 
 
 // Start the server
 app.listen(3000, () => console.log("Backend running on port 3000"));
+
+
+// http://localhost:3000/get-ocr/rishabh94033@gmail.com
