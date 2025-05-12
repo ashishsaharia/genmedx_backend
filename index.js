@@ -327,9 +327,9 @@ app.post("/onboarding", async (req, res) => {
 
 
 app.post("/add-medicine", async (req, res) => {
-  const { userEmail, name, cause } = req.body;
+  const { userEmail, name, cause,repeatperiod } = req.body;
 
-  if (!userEmail || !name || !cause) {
+  if (!userEmail || !name || !cause|| !repeatperiod) {
     return res.status(400).json({ error: "userEmail, name, and cause are required" });
   }
 
@@ -341,18 +341,18 @@ app.post("/add-medicine", async (req, res) => {
     }
 
     // Construct the new medicine object
-    const newMedicine = { name, cause };
+    const newMedicine = { name, cause ,repeatperiod};
 
     // Add the new medicine to the medicines array
     medicalInfo.medicines.push(newMedicine);
     await medicalInfo.save();
 const timestamp = medicalInfo.createdAt.toLocaleString();
     // Construct the new medicine text to be appended to OCR text
-    const newMedicineText = `Medicine name is this(this medicne was added manually not the pdf or any ocr remember it) : ${name}\nand its Cause is this : ${cause}\nand this medicine was updated on the date${timestamp}\n`;
+    const newMedicineText = `Medicine name is this(this medicne was added manually not the pdf or any ocr remember it) : ${name}\nand its Cause is this : ${cause}\nthe repeat period for this medicine is ${repeatperiod}\nand this medicine was updated on the date${timestamp}\n`;
 
     // Update the OCR Text document
     const ocrTextDoc = await OcrText.findOne({ userEmail });
-    console.log("newMedicineText", newMedicineText);
+    // console.log("newMedicineText", newMedicineText);
     if (ocrTextDoc) {
       // Append to the existing OCR text
       ocrTextDoc.text += newMedicineText;
