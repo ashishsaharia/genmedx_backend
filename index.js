@@ -10,6 +10,7 @@ const connectDB = require("./config/db");
 const dotenv = require("dotenv");
 const { log } = require("console");
 const Redis = require("ioredis");
+// const User = require("./models/User")
 
 
 dotenv.config();
