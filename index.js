@@ -447,9 +447,43 @@ app.get('/check-user/:email', async (req, res) => {
   }
 });
 
+app.post("/logout", async (req, res) => {
+  const { userEmail } = req.body;
+
+  if (!userEmail) return res.status(400).json({ error: "Missing email" });
+
+  try {
+    // Clear the Redis cache for the user
+    await redis.del(`chat:${userEmail}`);
+    res.status(200).json({ message: "Logout successful" });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res.status(500).json({ error: "Logout failed" });
+  }
+});
 
 
+app.get("/activity/:email", async (req, res) => {
+  const { email } = req.params;
 
+  try {
+    const userActivity = await activityData.findOne({ userEmail: email })
+      .sort({ createdAt: -1 })
+      .limit(1);
+
+    if (!userActivity) {
+      return res.status(404).json({ message: "No activity data found for the user" });
+    }
+
+    // Return the latest entry in the activitydata array
+    const latestData = userActivity.activitydata.slice(-1)[0];
+    res.json(latestData);
+
+  } catch (error) {
+    console.error("Error fetching activity data:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
 
 // Start the server
 app.listen(3000, () => console.log("Backend running on port 3000"));
