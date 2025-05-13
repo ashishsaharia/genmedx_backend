@@ -5,6 +5,8 @@ const cors = require("cors");
 const tesseract = require("tesseract.js");
 const OcrText = require("./models/OcrText");
 const MedicalInfo = require("./models/medicalInfo");
+
+const activityData = require("./models/activityData");
 const path = require("path");
 const connectDB = require("./config/db");
 const dotenv = require("dotenv");
@@ -275,6 +277,8 @@ app.post("/onboarding", async (req, res) => {
     userEmergencyContact
   } = req.body;
 
+  // console.log("Onboarding data:", req.body);
+  // console.log("userEmail", userEmail);
   if (
     !userEmail || !fullName || !phoneNumber || !userAge || !userGender ||
     !userHeight || !userWeight || !userEmergencyContact
@@ -367,6 +371,55 @@ const timestamp = medicalInfo.createdAt.toLocaleString();
     }
 
     res.status(200).json({ message: "Medicine info added and OCR text updated", medicalInfo });
+
+  } catch (err) {
+    console.error("Error adding medicine info:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+app.post("/add-activity-data", async (req, res) => {
+  const { userEmail, sleep, bloodPressure,steps } = req.body;
+
+  if (!sleep || !steps || !bloodPressure) {
+    return res.status(400).json({ error: "userEmail, name, and cause are required" });
+  }
+
+  try {
+    // Fetch or create the MedicalInfo document
+    let activitydata = await activityData.findOne({ userEmail });
+    if (!activitydata) {
+      activitydata = new activityData({ userEmail, activitydata: [] });
+    }
+
+    // Construct the new medicine object
+    const newactivity = { sleep, steps ,bloodPressure};
+
+    // Add the new medicine to the medicines array
+    activitydata.activitydata.push(newactivity);
+    await activitydata.save();
+const timestamp = activitydata.createdAt.toLocaleString();
+    // Construct the new medicine text to be appended to OCR text
+    const newactivitydata = `this is the steps for today ${steps}\nand this is the blood pressure for today ${bloodPressure}\nthis is the sleep data for today ${sleep}\nand this medicine was updated on the date${timestamp}\n`;
+
+    // Update the OCR Text document
+    const ocrTextDoc = await OcrText.findOne({ userEmail });
+    // console.log("newMedicineText", newMedicineText);
+    if (ocrTextDoc) {
+      // Append to the existing OCR text
+      ocrTextDoc.text += newactivitydata;
+      await ocrTextDoc.save();
+    } else {
+      // Create a new OCR text document if not found
+      await OcrText.create({
+        userEmail,
+        fileName: "activity-data.txt",
+        text: newactivitydata,
+      });
+    }
+
+    res.status(200).json({ message: "activity data and ocr updated", activitydata });
 
   } catch (err) {
     console.error("Error adding medicine info:", err.message);
